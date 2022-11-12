@@ -1,35 +1,39 @@
+/****************************************
  // FileName:        HVAC_IO.c
  // Dependencies:    HVAC.h
  // Processor:       MSP432
  // Board:           MSP432P401R
- // Program version: CCS V8.3 TI
- // Company:         Texas Instruments
- // Description:     Funciones de control de HW a través de estados.
- // Authors:         José Luis Chacón M. y Jesús Alejandro Navarro Acosta.
- // Updated:         11/2018
+ // Program version: CCS V12.0.0 TI
+ // Project version: LAB_2_U2_Equipo_8 v2.0
+ // Company:         TECNM - CAMPUS CHIHUAHUA
+ // Description:     Funciones de control de iluminación
+ // Authors:         Hiram Ochoa Sáenz
+  *                  Manuel Alejandro Quiroz Gallegos
+  *                  Luis Octavio Méndez Valles
+ // Professor:       Alfredo Chacón
+ // Subject:         Arquitectura de Prog. Para Hardware
+ // Updated:         10/11/2022
+ ****************************************/
 
 #include "HVAC.h"
 
-static int iteraciones = 0;
 /* Variables sobre las cuales se maneja el sistema. */
-int Persiana_1A, Persiana_2A, Persiana_1B, Persiana_2B, Delay_Per1=0, Delay_Per2, i, j, k;//Estados de persianas
+int DELAY_P1 = 0, DELAY_P2 = 0, ITERATIONS = 0, i, j;//Retrasos
+float Pot_1, Pot_2, Pot_3; //Potenciometros
 
-char state[MAX_MSG_SIZE];  // Lecturas de POT1
-char state2[MAX_MSG_SIZE]; // Lecturas de POT2
-char state3[MAX_MSG_SIZE]; // Lecturas de POT3
-char state4[MAX_MSG_SIZE]; // Lecturas de PERSIANA1
-char state5[MAX_MSG_SIZE]; // Lecturas de PERSIANA2
+//Lecturas de potenciómetros y persianas
+char state1[MAX_MSG_SIZE];
+char state2[MAX_MSG_SIZE];
+char state3[MAX_MSG_SIZE];
+char state4[MAX_MSG_SIZE];
+char state5[MAX_MSG_SIZE];
 
-void System_Inicio (void);
-
-bool event = FALSE;            // Evento I/O que fuerza impresión inmediata.
-
+//Banderas para la ejecución del sistema
+bool event = FALSE; //Evento; impresión inmediata
 bool sys_flag, sys_turn;
-bool light_flag = FALSE, light_turn = FALSE;
-bool Lumin1, Lumin2, Lumin3;
+bool light_flag = FALSE;
+bool LIGHT_1, LIGHT_2, LIGHT_3;
 bool Per_UD_1 = FALSE, Per_UD_2 = FALSE, ACT_STATE_P1 = FALSE, ACT_STATE_P2 = FALSE, PREV_STATE_P1, PREV_STATE_P2;
-
-float Pot_1, Pot_2, Pot_3=0.0; //Valores de los POTs y sus canales.
 
 /* **** SE DECLARARON LAS VARIABLES Y FUNCIONES PARA REALIZAR EL DALAY CON EL TIMER ******** */
 extern void Timer32_INT1 (void); // Función de interrupción.
@@ -50,6 +54,14 @@ void System_InicialiceTIMER (void)
     Int_enableInterrupt(INT_T32_INT1);
 }
 
+/*FUNCTION******************************************************************************
+*
+* Function Name    : System_Inicio
+* Returned Value   : None.
+* Comments         :
+*    Imprime e indica el estado inicial del sistema (apagado).
+*
+*END***********************************************************************************/
 void System_Inicio (void){
     GPIO_setOutput(BSP_LED1_PORT, BSP_LED1, 1);
     GPIO_setOutput(BSP_LED2_PORT, BSP_LED2, 0);
@@ -60,68 +72,88 @@ void System_Inicio (void){
     sys_flag = FALSE;
 }
 
+/*FUNCTION******************************************************************************
+*
+* Function Name    : Sys_ON
+* Returned Value   : None.
+* Comments         :
+*    Determina e imprime el estado del sistema.
+*
+*END***********************************************************************************/
 void Sys_ON(void){
     sys_turn = (!sys_turn);
-    if(sys_turn){
+    if(sys_turn) //Enciende el sistema
+    {
         sys_flag = TRUE;
-        GPIO_setOutput(BSP_LED4_PORT, BSP_LED4, 1); //Se activa el LED Azul
+        GPIO_setOutput(BSP_LED3_PORT, BSP_LED3, 1);
         UART_putsf(MAIN_UART,"\n Sistema: ENCENDIDO \n\r");
-    }else{
+    }
+    else //Pregunta si se presiona mientras esta en ejecución
+    {
         sys_turn = TRUE;
         GPIO_clear_interrupt_flag(P1,B1);
-        UART_putsf(MAIN_UART, "\n SI DESEA TERMINAR LA APLICACIÓN, ENTONCES VUELVA APRESIONAR EL SWITCH\n");
-        for(k=0;k<5;k++){
-            for(i=0;i<2500000;i++);
-            if(!GPIO_getInputPinValue(SYS_PORT ,BIT(SYS_PIN_ON))){
+        UART_putsf(MAIN_UART, "\n SI DESEA TERMINAR LA APLICACIÓN, ENTONCES VUELVA APRESIONAR EL SWITCH \n\r");
+        for(i=0;i<3500000;i++)
+        {
+            if(!GPIO_getInputPinValue(SYS_PORT ,BIT(SYS_PIN_ON))) //Apaga el sistema
+            {
+                for(j=0;j<1000000;j++);
                 System_Inicio();
             }
         }
     }
 }
 
-void Button_SYS(void){ //Funcion que activa el sistema, utilizando un botón conectado al puerto 6.0 como entrada
-    GPIO_clear_interrupt_flag(P1,B1); // Limpia la bandera de la interrupción.
-    GPIO_clear_interrupt_flag(P1,B4); // Limpia la bandera de la interrupción.
-
-    if(!GPIO_getInputPinValue(SYS_PORT ,BIT(SYS_PIN_ON))){ // Si se trata del botón 1.1, llamará a la función para trabajar con la persiana 1
-        for(i=0;i<1000000;i++);
-        Sys_ON();
-        event=TRUE;
-    }
-    else if(!GPIO_getInputPinValue(LIGHT_PORT ,BIT(LIGHT_PIN_ON))){ // Si se trata del botón 1.4 1.1, llamará a la función para trabajar con la persiana 1.
-        for(j=0;j<1000000;j++);
-        LIGHT_ON();
-        event=TRUE;
-    }
-    return;
-}
-
-void LIGHT_ON(void){
-    light_flag = (!light_flag);
-}
-
-/*******************************************************************************************/
-
 /**********************************************************************************
- * Function: INT_SWI
+ * Function: Button_SYS
  * Preconditions: Interrupción habilitada, registrada e inicialización de módulos.
  * Overview: Función que es llamada cuando se genera
  *           la interrupción del botón SW1 o SW2.
  * Input: None.
  * Output: None.
  **********************************************************************************/
-void INT_SWI(void)
+void Button_SYS(void) //Funcion que llama a las funciones que activan el sistema y las luces, utilizando botones conectados al puerto 1 como entrada
+{
+    GPIO_clear_interrupt_flag(P1,B1); //Limpia la bandera de la interrupción.
+    GPIO_clear_interrupt_flag(P1,B4); //Limpia la bandera de la interrupción.
+
+    if(!GPIO_getInputPinValue(SYS_PORT ,BIT(SYS_PIN_ON))) //Si se pulsa el boton 1.1, llama a la funcion que activa el sistema
+    {
+        for(i=0;i<1000000;i++);
+        Sys_ON();
+        event=TRUE;
+    }
+    else if(!GPIO_getInputPinValue(LIGHT_PORT ,BIT(LIGHT_PIN_ON))) //Si se pulsa el boton 1.4, llama a la funcion que activa las luces
+    {
+        for(j=0;j<1000000;j++);
+        light_flag = (!light_flag);
+        event=TRUE;
+    }
+    return;
+}
+
+/**********************************************************************************
+ * Function: INT_SWI
+ * Preconditions: Interrupción habilitada, registrada e inicialización de módulos.
+ * Overview: Función que es llamada cuando se genera
+ *           la interrupción del botón SW3 o SW4.
+ * Input: None.
+ * Output: None.
+ **********************************************************************************/
+void INT_SWI(void) //Funcion que activa las persianas utilizando botones conectados al puerto 2 como entrada
 {
     GPIO_clear_interrupt_flag(P2,B6); // Limpia la bandera de la interrupción.
     GPIO_clear_interrupt_flag(P2,B7); // Limpia la bandera de la interrupción.
 
-    if(!GPIO_getInputPinValue(PERSIANAS_PORT, BIT(PERSIANA_1))){ // Si se trata del botón 1.1, llamará a la función para trabajar con la persiana 1
+    if(!GPIO_getInputPinValue(PERSIANAS_PORT, BIT(PERSIANA_1))) //Si se pulsa el boton 2.6, activa la persiana 1
+    {
         for(i=0;i<1000000;i++);
         Per_UD_1 = (!Per_UD_1);
         ACT_STATE_P1 = Per_UD_1;
         event=TRUE;
     }
-    else if(!GPIO_getInputPinValue(PERSIANAS_PORT, BIT(PERSIANA_2))){ // Si se trata del botón 1.4 1.1, llamará a la función para trabajar con la persiana 1.
+    else if(!GPIO_getInputPinValue(PERSIANAS_PORT, BIT(PERSIANA_2))) //Si se pulsa el boton 2.7, activa la persiana 2
+    {
         for(j=0;j<1000000;j++);
         Per_UD_2 = (!Per_UD_2);
         ACT_STATE_P2 = Per_UD_2;
@@ -159,7 +191,6 @@ void HVAC_InicialiceIO(void)
     GPIO_enable_bit_interrupt(P2,B6);
     GPIO_enable_bit_interrupt(P2,B7);
 
-
     // Se necesitan más entradas, se usarán las siguientes:
     GPIO_setBitIO(SYS_PORT, SYS_PIN_ON, ENTRADA);
     GPIO_setBitIO(PERSIANAS_PORT,PERSIANA_1, ENTRADA);
@@ -172,7 +203,6 @@ void HVAC_InicialiceIO(void)
     Int_enableInterrupt(INT_PORT2);
     Int_registerInterrupt(INT_PORT1, Button_SYS);
     Int_enableInterrupt(INT_PORT1);
-    //Int_enableInterrupt(INT_PORT1);
 }
 
 /*FUNCTION******************************************************************************
@@ -181,8 +211,7 @@ void HVAC_InicialiceIO(void)
 * Returned Value   : None.
 * Comments         :
 *    Inicializa las configuraciones deseadas para
-*    el módulo general ADC y dos de sus canales; uno para la temperatura, otro para
-*    el heartbeat.
+*    el módulo general ADC y tres de sus canales, uno para cada potenciometro.
 *
 *END***********************************************************************************/
 void HVAC_InicialiceADC(void)
@@ -190,10 +219,10 @@ void HVAC_InicialiceADC(void)
     // Iniciando ADC y canales.
     ADC_Initialize(ADC_14bitResolution, ADC_CLKDiv8);
     ADC_SetConvertionMode(ADC_SequenceOfChannels);
-    ADC_ConfigurePinChannel(LIGHT_CH1, POT_1, ADC_VCC_VSS);   // Pin AN0 para potenciómetro.
-    ADC_ConfigurePinChannel(LIGHT_CH2, POT_2, ADC_VCC_VSS);   // Pin AN1 para potenciómetro.
-    ADC_ConfigurePinChannel(LIGHT_CH3, POT_3, ADC_VCC_VSS);   // Pin AN6 para potenciómetro.
-    ADC_SetEndOfSequenceChannel(LIGHT_CH3);                     // Termina en el AN1, canal último.
+    ADC_ConfigurePinChannel(LIGHT_CH1, POT_1, ADC_VCC_VSS);   // Pin AN9 para potenciómetro.
+    ADC_ConfigurePinChannel(LIGHT_CH2, POT_2, ADC_VCC_VSS);   // Pin AN8 para potenciómetro.
+    ADC_ConfigurePinChannel(LIGHT_CH3, POT_3, ADC_VCC_VSS);   // Pin AN1 para potenciómetro.
+    ADC_SetEndOfSequenceChannel(LIGHT_CH3);                   // Determina el final de la secuencia de canales.
 }
 
 /*FUNCTION******************************************************************************
@@ -221,109 +250,116 @@ void HVAC_InicialiceUART (void)
 *END***********************************************************************************/
 void HVAC_ActualizarEntradas(void)
 {
-    ADC_trigger(); while(ADC_is_busy()); //ADC_MSP432.h Se activa el ADC y pone al ADC en busy
-    Pot_1 = ADC_result(LIGHT_CH1); //El resultado del convertidor ADC se guarda en su
-    Pot_2 = ADC_result(LIGHT_CH2); //memoria y se registra en el canal y guarda
-    Pot_3 = ADC_result(LIGHT_CH3); //en la variable.
-    if(light_flag == TRUE){ // Observa entradas.
-        Lumin1 = TRUE;
-        Lumin2 = TRUE;
-        Lumin3 = TRUE;
+    ADC_trigger(); while(ADC_is_busy()); // Comienza la conversión a ADC
+    Pot_1 = ADC_result(LIGHT_CH1); // Guarda el valor de la conversión en las variables de los potenciómetros
+    Pot_2 = ADC_result(LIGHT_CH2);
+    Pot_3 = ADC_result(LIGHT_CH3);
+    if(light_flag == TRUE){ // Enciende o apaga las luces
+        LIGHT_1 = TRUE;
+        LIGHT_2 = TRUE;
+        LIGHT_3 = TRUE;
     }else{
-        Lumin1 = FALSE;
-        Lumin2 = FALSE;
-        Lumin3 = FALSE;
+        LIGHT_1 = FALSE;
+        LIGHT_2 = FALSE;
+        LIGHT_3 = FALSE;
     }
 }
-                                                                    //Este es solo un default en el caso de que
-                                                                    // el sistema no encuentre ningun estado de los 3
-                                                                    // activo (deberia ser un error debido a que debe
-                                                                    // haber solo un botón activado siempre).
+
+void LIGHTS(void)
+{
+    switch (LIGHT_1)  // Almacena los lumenes de la luz 1 en la cadena state1 de estar encendido, si no, OFF
+    {
+        case TRUE: sprintf(state1,"LUZ_1= %.0f ", (Pot_1/ 16383.0*10));break;
+        case FALSE: sprintf(state1,"LUZ_1= OFF ");break;
+    }
+    switch (LIGHT_2)  // Almacena los lumenes de la luz 2 en la cadena state2 de estar encendido, si no, OFF
+    {
+        case TRUE: sprintf(state2,"LUZ_2= %.0f ", (Pot_2/ 16383.0*10));break;
+        case FALSE: sprintf(state2,"LUZ_2= OFF, ");break;
+    }
+    switch (LIGHT_3)  // Almacena los lumenes de la luz 3 en la cadena state3 de estar encendido, si no, OFF
+    {
+        case TRUE: sprintf(state3,"LUZ_3= %.0f ", (Pot_3/ 16383.0*10));break;
+        case FALSE: sprintf(state3,"LUZ_3= OFF, ");break;
+    }
+}
+
+void PERSIANAS(void)
+{
+    if(PREV_STATE_P1 != ACT_STATE_P1) //Si ocurre un evento en la persiana 1, activa un contador que funciona como retardo
+        DELAY_P1++;
+
+    if(DELAY_P1>0 && DELAY_P1<10) //Almacena el estado cambiante de la persiana 1 durante 5 segundos
+    {
+        if(Per_UD_1)
+            sprintf(state4,"P1: UP ");
+        else
+            sprintf(state4,"P1: DOWN ");
+    }
+    else if (Per_UD_1) //Almacena el estado final de la persiana 1
+    {
+        PREV_STATE_P1 = Per_UD_1;
+        DELAY_P1=0;
+        sprintf(state4,"P1: OPEN ");
+    }
+    else
+    {
+        PREV_STATE_P1 = Per_UD_1;
+        DELAY_P1=0;
+        sprintf(state4,"P1: CLOSED ");
+    }
+
+    if(PREV_STATE_P2 != ACT_STATE_P2) //Si ocurre un evento en la persiana 2, activa un contador que funciona como retardo
+        DELAY_P2++;
+
+    if(DELAY_P2>0 && DELAY_P2<10) //Almacena el estado cambiante de la persiana 2 durante 5 segundos
+    {
+        if(Per_UD_2)
+            sprintf(state5,"P2: UP \r\n");
+        else
+            sprintf(state5,"P2: DOWN \r\n");
+    }
+    else if (Per_UD_2) //Almacena el estado final de la persiana 2
+    {
+        PREV_STATE_P2 = Per_UD_2;
+        DELAY_P2=0;
+        sprintf(state5,"P2: OPEN \r\n");
+    }
+    else
+    {
+        PREV_STATE_P2 = Per_UD_2;
+        DELAY_P2=0;
+        sprintf(state5,"P2: CLOSED \r\n");
+    }
+}
 
 /*FUNCTION******************************************************************************
 *
 * Function Name    : HVAC_PrintState
 * Returned Value   : None.
 * Comments         :
-*    Imprime via UART la situación actual del sistema en términos de temperaturas
-*    actual y deseada, estado del abanico, del sistema y estado de las entradas.
+*    Imprime via UART la situación actual del sistema en términos de estados de las luces,
+*    lumenes y estados de las persianas.
 *    Imprime cada cierto número de iteraciones y justo despues de recibir un cambio
 *    en las entradas, produciéndose un inicio en las iteraciones.
 *END***********************************************************************************/
 void HVAC_PrintState(void)
 {
-    iteraciones++;
-    if((iteraciones >= ITERATIONS_TO_PRINT || event == TRUE) && sys_flag == TRUE){
-        iteraciones=0;
-        event= FALSE;
-        switch (Lumin1){ //Mostrará en la consola el valor del potenciometro 1 si esta activado, sino mostrará que esta apagado.
-            case TRUE: sprintf(state, "LUM 1: %.0f ", (Pot_1/ 16383.0*10));
-            break;
-            case FALSE: sprintf(state,"LUM 1:OFF ");
-            break;
-            default:break;
-        }
-        switch (Lumin2){ //Mostrará en la consola el valor del potenciometro 2 si esta activado, sino mostrará que esta apagado.
-            case TRUE: sprintf(state2,"LUM 2: %.0f ", (Pot_2/ 16383.0*10));
-            break;
-            case FALSE: sprintf(state2,"LUM 2:OFF, ");
-            break;
-            default:break;
-        }
-        switch (Lumin3){ //Mostrará en la consola el valor del potenciometro 3 si esta activado, sino mostrará que esta apagado.
-            case TRUE: sprintf(state3,"LUM 3: %.0f ", (Pot_3/ 16383.0*10));
-            break;
-            case FALSE: sprintf(state3,"LUM 3:OFF, ");
-            break;
-            default:
-            break;
-        }
-        if(PREV_STATE_P1 != ACT_STATE_P1){ //Si los botones de las persianas fueron presionados,
-            Delay_Per1++; //aumentará el contrador que funcionará como delay.
-        }
+    ITERATIONS++;
+    if((ITERATIONS > ITERATIONS_TO_PRINT || event) && sys_flag) // Entra si se cumplen las iteraciones necesarias o
+    {                                                           // si ocurre un evento, mientras el sistema esté encendido
+        ITERATIONS = 0;
+        event = FALSE;
+        LIGHTS();
+        PERSIANAS();
 
-        if(Delay_Per1>0 && Delay_Per1<46){ //Si se usa un contador, donde llegue antes de 30 iteraciones, es lo equivalente a 10 segundos.
-
-            if(Per_UD_1)
-                sprintf(state4,"PER1: UP ");
-            else
-                sprintf(state4,"PER1: DOWN ");
-        }else if (Per_UD_1){
-            PREV_STATE_P1 = Per_UD_1;
-            Delay_Per1=0;
-            sprintf(state4,"PER1: OPEN ");
-        }else{
-            PREV_STATE_P1 = Per_UD_1;
-            Delay_Per1=0;
-            sprintf(state4,"PER1: CLOSED ");
-        }
-
-        if(PREV_STATE_P2 != ACT_STATE_P2){ //Si los botones de las persianas fueron presionados,
-            Delay_Per2++; //aumentará el contrador que funcionará como delay.
-        }
-
-        if(Delay_Per2>0 && Delay_Per2<46){ //Si se usa un contador, donde llegue antes de 30 iteraciones, es lo equivalente a 10 segundos.
-
-            if(Per_UD_2)
-                sprintf(state5,"PER2: UP \r\n");
-            else
-                sprintf(state5,"PER2: DOWN \r\n");
-
-        }else if (Per_UD_2){
-            PREV_STATE_P2 = Per_UD_2;
-            Delay_Per2=0;
-            sprintf(state5,"PER2: OPEN \r\n");
-        }else{
-            PREV_STATE_P2 = Per_UD_2;
-            Delay_Per2=0;
-            sprintf(state5,"PER2: CLOSED \r\n");
-        }
-        Delay_ms(100);
-        UART_putsf(MAIN_UART,state); //Imprime los resultados guardados en las cadenas asignadas.
+        //Imprime los estados resultantes
+        UART_putsf(MAIN_UART,state1);
         UART_putsf(MAIN_UART,state2);
         UART_putsf(MAIN_UART,state3);
         UART_putsf(MAIN_UART,state4);
         UART_putsf(MAIN_UART,state5);
+
+        Delay_ms(500);
     }
 }
-

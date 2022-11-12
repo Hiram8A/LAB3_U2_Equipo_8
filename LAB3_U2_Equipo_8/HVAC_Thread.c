@@ -43,8 +43,6 @@ void *HVAC_Thread(void *arg0)
     }
 }
 
-
-
 /* *********  FUNCIONES PARA REALIZAR EL DALAY CON EL TIMER ********* */
 void Delay_ms(uint32_t time)
 {
@@ -60,4 +58,3 @@ void Timer32_INT1(void)
     T32_ClearInterruptFlag1(); // Al llegar a la interrupción
     retraso = false; // desenclava el while.
 }
-

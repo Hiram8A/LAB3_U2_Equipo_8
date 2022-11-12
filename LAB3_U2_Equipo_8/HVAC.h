@@ -110,7 +110,7 @@ struct EstadoEntradas
 #define MAX_ADC_VALUE 16383             // (2 ^14 bits) es la resolución default.
 #define MAIN_UART (uint32_t)(EUSCI_A0)
 #define DELAY 20000
-#define ITERATIONS_TO_PRINT 50
+#define ITERATIONS_TO_PRINT 49
 
 // Definición para el RTOS.
 #define THREADSTACKSIZE1 1500
@@ -141,12 +141,11 @@ extern void HVAC_SetPointUp(void);
 extern void HVAC_SetPointDown(void);
 
 // Funciones Lab 3 ADC
-
+extern void System_Inicio (void);
 extern void Sys_ON(void);
 extern void Button_SYS(void);
-extern void ILUMI_PER_1(void);
-extern void ILUMI_PER_2(void);
-extern void LIGHT_ON(void);
 extern void Button_LIGHT(void);
+extern void LIGHTS(void);
+extern void PERSIANAS(void);
 
 #endif
